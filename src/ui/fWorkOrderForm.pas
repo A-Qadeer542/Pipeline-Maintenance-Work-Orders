@@ -27,21 +27,22 @@ type
   private
     FService: TWorkOrderService;
     FEditingId: Integer;
-    procedure PopulateCombos;
-    procedure LoadFromWorkOrder(AId: Integer);
-    procedure SaveToWorkOrder;
+    procedure InitializeDropdowns;
+    procedure PopulateFieldsFromWorkOrder(AId: Integer);
+    procedure PersistWorkOrder;
+    function  IsEditMode: Boolean;
   public
-    class function ExecuteNew(AService: TWorkOrderService): Boolean;
-    class function ExecuteEdit(AService: TWorkOrderService; AId: Integer): Boolean;
+    class function ShowCreateDialog(AService: TWorkOrderService): Boolean;
+    class function ShowEditDialog(AService: TWorkOrderService; AId: Integer): Boolean;
   end;
 
 implementation
 
 {$R *.dfm}
 
-{ --- static entry points --- }
+{ --- public dialog entry points --- }
 
-class function TWorkOrderForm.ExecuteNew(AService: TWorkOrderService): Boolean;
+class function TWorkOrderForm.ShowCreateDialog(AService: TWorkOrderService): Boolean;
 var
   Dlg: TWorkOrderForm;
 begin
@@ -57,7 +58,7 @@ begin
   end;
 end;
 
-class function TWorkOrderForm.ExecuteEdit(AService: TWorkOrderService; AId: Integer): Boolean;
+class function TWorkOrderForm.ShowEditDialog(AService: TWorkOrderService; AId: Integer): Boolean;
 var
   Dlg: TWorkOrderForm;
 begin
@@ -66,7 +67,7 @@ begin
     Dlg.FService   := AService;
     Dlg.FEditingId := AId;
     Dlg.Caption    := Format('Edit Work Order #%d', [AId]);
-    Dlg.LoadFromWorkOrder(AId);
+    Dlg.PopulateFieldsFromWorkOrder(AId);
     Result := (Dlg.ShowModal = mrOk);
   finally
     Dlg.Free;
@@ -77,12 +78,30 @@ end;
 
 procedure TWorkOrderForm.FormCreate(Sender: TObject);
 begin
-  PopulateCombos;
+  InitializeDropdowns;
   cmbPriority.ItemIndex := Ord(woMedium);
   cmbStatus.ItemIndex   := Ord(woNew);
 end;
 
-procedure TWorkOrderForm.PopulateCombos;
+procedure TWorkOrderForm.btnSaveClick(Sender: TObject);
+begin
+  try
+    PersistWorkOrder;
+    ModalResult := mrOk;
+  except
+    on E: EWorkOrderValidation do
+      MessageDlg(E.Message, mtError, [mbOK], 0);
+  end;
+end;
+
+{ --- private helpers --- }
+
+function TWorkOrderForm.IsEditMode: Boolean;
+begin
+  Result := FEditingId > 0;
+end;
+
+procedure TWorkOrderForm.InitializeDropdowns;
 var
   P: TWorkOrderPriority;
   S: TWorkOrderStatus;
@@ -96,54 +115,43 @@ begin
     cmbStatus.Items.Add(WorkOrderStatusLabels[S]);
 end;
 
-procedure TWorkOrderForm.LoadFromWorkOrder(AId: Integer);
+procedure TWorkOrderForm.PopulateFieldsFromWorkOrder(AId: Integer);
 var
-  WO: TWorkOrder;
+  WorkOrder: TWorkOrder;
 begin
-  WO := FService.GetById(AId);
+  WorkOrder := FService.FetchWorkOrderById(AId);
   try
-    edtTitle.Text          := WO.Title;
-    edtLocation.Text       := WO.Location;
-    memDescription.Text    := WO.Description;
-    cmbPriority.ItemIndex  := Ord(WO.Priority);
-    cmbStatus.ItemIndex    := Ord(WO.Status);
+    edtTitle.Text          := WorkOrder.Title;
+    edtLocation.Text       := WorkOrder.Location;
+    memDescription.Text    := WorkOrder.Description;
+    cmbPriority.ItemIndex  := Ord(WorkOrder.Priority);
+    cmbStatus.ItemIndex    := Ord(WorkOrder.Status);
   finally
-    WO.Free;
+    WorkOrder.Free;
   end;
 end;
 
-procedure TWorkOrderForm.SaveToWorkOrder;
+procedure TWorkOrderForm.PersistWorkOrder;
 var
-  WO: TWorkOrder;
+  WorkOrder: TWorkOrder;
 begin
-  WO := TWorkOrder.Create;
+  WorkOrder := TWorkOrder.Create;
   try
-    WO.Id          := FEditingId;
-    WO.Title       := edtTitle.Text;
-    WO.Location    := edtLocation.Text;
-    WO.Description := memDescription.Text;
-    WO.Priority    := TWorkOrderPriority(cmbPriority.ItemIndex);
+    WorkOrder.Id          := FEditingId;
+    WorkOrder.Title       := edtTitle.Text;
+    WorkOrder.Location    := edtLocation.Text;
+    WorkOrder.Description := memDescription.Text;
+    WorkOrder.Priority    := TWorkOrderPriority(cmbPriority.ItemIndex);
 
-    if FEditingId < 0 then
-      FService.CreateWorkOrder(WO)
-    else
+    if IsEditMode then
     begin
-      WO.Status := TWorkOrderStatus(cmbStatus.ItemIndex);
-      FService.UpdateWorkOrder(WO);
-    end;
+      WorkOrder.Status := TWorkOrderStatus(cmbStatus.ItemIndex);
+      FService.UpdateWorkOrder(WorkOrder);
+    end
+    else
+      FService.CreateWorkOrder(WorkOrder);
   finally
-    WO.Free;
-  end;
-end;
-
-procedure TWorkOrderForm.btnSaveClick(Sender: TObject);
-begin
-  try
-    SaveToWorkOrder;
-    ModalResult := mrOk;
-  except
-    on E: EWorkOrderValidation do
-      MessageDlg(E.Message, mtError, [mbOK], 0);
+    WorkOrder.Free;
   end;
 end;
 

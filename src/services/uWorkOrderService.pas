@@ -12,89 +12,100 @@ type
   TWorkOrderService = class
   private
     FRepo: IWorkOrderRepository;
-    procedure Validate(AWO: TWorkOrder);
+    procedure ValidateRequiredFields(AWorkOrder: TWorkOrder);
+    procedure StampTimestampsForCreate(AWorkOrder: TWorkOrder);
+    procedure StampTimestampForUpdate(AWorkOrder: TWorkOrder);
   public
-    constructor Create(ARepo: IWorkOrderRepository);
+    constructor Create(ARepository: IWorkOrderRepository);
 
-    function  List(AStatus: TWorkOrderStatus; APriority: TWorkOrderPriority;
-                   AFilterStatus, AFilterPriority: Boolean): TObjectList<TWorkOrder>;
-    function  GetById(AId: Integer): TWorkOrder;
-    function  CreateWorkOrder(AWO: TWorkOrder): Integer;
-    procedure UpdateWorkOrder(AWO: TWorkOrder);
-    procedure AdvanceStatus(AId: Integer);
+    function  FetchWorkOrders(const AFilter: TWorkOrderFilter): TObjectList<TWorkOrder>;
+    function  FetchWorkOrderById(AId: Integer): TWorkOrder;
+    function  CreateWorkOrder(AWorkOrder: TWorkOrder): Integer;
+    procedure UpdateWorkOrder(AWorkOrder: TWorkOrder);
+    procedure AdvanceWorkOrderStatus(AId: Integer);
   end;
 
 implementation
 
-constructor TWorkOrderService.Create(ARepo: IWorkOrderRepository);
+constructor TWorkOrderService.Create(ARepository: IWorkOrderRepository);
 begin
   inherited Create;
-  FRepo := ARepo;
+  FRepo := ARepository;
 end;
 
-procedure TWorkOrderService.Validate(AWO: TWorkOrder);
+{ --- validation --- }
+
+procedure TWorkOrderService.ValidateRequiredFields(AWorkOrder: TWorkOrder);
 begin
-  if AWO = nil then
+  if AWorkOrder = nil then
     raise EWorkOrderValidation.Create('No work order supplied.');
 
-  if AWO.Title.Trim.IsEmpty then
+  if AWorkOrder.Title.Trim.IsEmpty then
     raise EWorkOrderValidation.Create('Title cannot be blank.');
 
-  if AWO.Location.Trim.IsEmpty then
+  if AWorkOrder.Location.Trim.IsEmpty then
     raise EWorkOrderValidation.Create('Location cannot be blank.');
 
-  if (Length(AWO.Title) > 200) then
+  if Length(AWorkOrder.Title) > 200 then
     raise EWorkOrderValidation.Create('Title must not exceed 200 characters.');
 end;
 
-function TWorkOrderService.List(AStatus: TWorkOrderStatus;
-  APriority: TWorkOrderPriority;
-  AFilterStatus, AFilterPriority: Boolean): TObjectList<TWorkOrder>;
+procedure TWorkOrderService.StampTimestampsForCreate(AWorkOrder: TWorkOrder);
 begin
-  Result := FRepo.GetAll(AStatus, APriority, AFilterStatus, AFilterPriority);
+  AWorkOrder.Status    := woNew;
+  AWorkOrder.CreatedAt := Now;
+  AWorkOrder.UpdatedAt := Now;
 end;
 
-function TWorkOrderService.GetById(AId: Integer): TWorkOrder;
+procedure TWorkOrderService.StampTimestampForUpdate(AWorkOrder: TWorkOrder);
 begin
-  Result := FRepo.GetById(AId);
+  AWorkOrder.UpdatedAt := Now;
+end;
+
+{ --- public API --- }
+
+function TWorkOrderService.FetchWorkOrders(
+  const AFilter: TWorkOrderFilter): TObjectList<TWorkOrder>;
+begin
+  Result := FRepo.FetchAll(AFilter);
+end;
+
+function TWorkOrderService.FetchWorkOrderById(AId: Integer): TWorkOrder;
+begin
+  Result := FRepo.FetchById(AId);
   if Result = nil then
     raise EWorkOrderValidation.CreateFmt('Work order #%d does not exist.', [AId]);
 end;
 
-function TWorkOrderService.CreateWorkOrder(AWO: TWorkOrder): Integer;
+function TWorkOrderService.CreateWorkOrder(AWorkOrder: TWorkOrder): Integer;
 begin
-  Validate(AWO);
-  AWO.Status    := woNew;
-  AWO.CreatedAt := Now;
-  AWO.UpdatedAt := Now;
-  Result := FRepo.Insert(AWO);
+  ValidateRequiredFields(AWorkOrder);
+  StampTimestampsForCreate(AWorkOrder);
+  Result := FRepo.InsertWorkOrder(AWorkOrder);
 end;
 
-procedure TWorkOrderService.UpdateWorkOrder(AWO: TWorkOrder);
+procedure TWorkOrderService.UpdateWorkOrder(AWorkOrder: TWorkOrder);
 begin
-  Validate(AWO);
-  AWO.UpdatedAt := Now;
-  FRepo.Update(AWO);
+  ValidateRequiredFields(AWorkOrder);
+  StampTimestampForUpdate(AWorkOrder);
+  FRepo.UpdateWorkOrder(AWorkOrder);
 end;
 
-procedure TWorkOrderService.AdvanceStatus(AId: Integer);
+procedure TWorkOrderService.AdvanceWorkOrderStatus(AId: Integer);
 var
-  WO: TWorkOrder;
+  Existing: TWorkOrder;
 begin
-  WO := FRepo.GetById(AId);
-  if WO = nil then
+  Existing := FRepo.FetchById(AId);
+  if Existing = nil then
     raise EWorkOrderValidation.CreateFmt('Work order #%d does not exist.', [AId]);
 
   try
-    case WO.Status of
-      woNew:        WO.Status := woInProgress;
-      woInProgress: WO.Status := woCompleted;
-      woCompleted:
-        raise EWorkOrderValidation.Create('This work order is already completed.');
-    end;
-    FRepo.UpdateStatus(WO.Id, WO.Status);
+    if not Existing.CanAdvanceStatus then
+      raise EWorkOrderValidation.Create('This work order is already completed.');
+
+    FRepo.UpdateWorkOrderStatus(Existing.Id, Existing.NextStatus);
   finally
-    WO.Free;
+    Existing.Free;
   end;
 end;
 

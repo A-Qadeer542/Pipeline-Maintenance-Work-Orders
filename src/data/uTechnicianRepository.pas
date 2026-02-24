@@ -11,77 +11,82 @@ uses
 type
   ITechnicianRepository = interface
     ['{7A1B2A0E-78E1-4FA6-8C4A-B0BC9B3D10A9}']
-    function GetActive: TObjectList<TTechnician>;
-    function GetById(AId: Integer): TTechnician;
+    function FetchActiveTechnicians: TObjectList<TTechnician>;
+    function FetchTechnicianById(AId: Integer): TTechnician;
   end;
 
   TTechnicianRepository = class(TInterfacedObject, ITechnicianRepository)
   private
     FConn: TFDConnection;
-    function RowToTechnician(Q: TFDQuery): TTechnician;
+    function CreateQuery: TFDQuery;
+    function MapRowToEntity(AQuery: TFDQuery): TTechnician;
   public
-    constructor Create(AConn: TFDConnection);
-    function GetActive: TObjectList<TTechnician>;
-    function GetById(AId: Integer): TTechnician;
+    constructor Create(AConnection: TFDConnection);
+    function FetchActiveTechnicians: TObjectList<TTechnician>;
+    function FetchTechnicianById(AId: Integer): TTechnician;
   end;
 
 implementation
 
-constructor TTechnicianRepository.Create(AConn: TFDConnection);
+constructor TTechnicianRepository.Create(AConnection: TFDConnection);
 begin
   inherited Create;
-  FConn := AConn;
+  FConn := AConnection;
 end;
 
-function TTechnicianRepository.RowToTechnician(Q: TFDQuery): TTechnician;
+function TTechnicianRepository.CreateQuery: TFDQuery;
+begin
+  Result := TFDQuery.Create(nil);
+  Result.Connection := FConn;
+end;
+
+function TTechnicianRepository.MapRowToEntity(AQuery: TFDQuery): TTechnician;
 begin
   Result := TTechnician.Create;
-  Result.Id       := Q.FieldByName('TechnicianId').AsInteger;
-  Result.FullName := Q.FieldByName('FullName').AsString;
-  Result.Email    := Q.FieldByName('Email').AsString;
-  Result.Phone    := Q.FieldByName('Phone').AsString;
-  Result.IsActive := Q.FieldByName('IsActive').AsBoolean;
+  Result.Id       := AQuery.FieldByName('TechnicianId').AsInteger;
+  Result.FullName := AQuery.FieldByName('FullName').AsString;
+  Result.Email    := AQuery.FieldByName('Email').AsString;
+  Result.Phone    := AQuery.FieldByName('Phone').AsString;
+  Result.IsActive := AQuery.FieldByName('IsActive').AsBoolean;
 end;
 
-function TTechnicianRepository.GetActive: TObjectList<TTechnician>;
+function TTechnicianRepository.FetchActiveTechnicians: TObjectList<TTechnician>;
 var
-  Q: TFDQuery;
+  Query: TFDQuery;
 begin
   Result := TObjectList<TTechnician>.Create(True);
-  Q := TFDQuery.Create(nil);
+  Query := CreateQuery;
   try
-    Q.Connection := FConn;
-    Q.SQL.Text :=
+    Query.SQL.Text :=
       'SELECT TechnicianId, FullName, Email, Phone, IsActive ' +
       'FROM Technicians WHERE IsActive = 1 ORDER BY FullName';
-    Q.Open;
-    while not Q.Eof do
+    Query.Open;
+    while not Query.Eof do
     begin
-      Result.Add(RowToTechnician(Q));
-      Q.Next;
+      Result.Add(MapRowToEntity(Query));
+      Query.Next;
     end;
   finally
-    Q.Free;
+    Query.Free;
   end;
 end;
 
-function TTechnicianRepository.GetById(AId: Integer): TTechnician;
+function TTechnicianRepository.FetchTechnicianById(AId: Integer): TTechnician;
 var
-  Q: TFDQuery;
+  Query: TFDQuery;
 begin
   Result := nil;
-  Q := TFDQuery.Create(nil);
+  Query := CreateQuery;
   try
-    Q.Connection := FConn;
-    Q.SQL.Text :=
+    Query.SQL.Text :=
       'SELECT TechnicianId, FullName, Email, Phone, IsActive ' +
       'FROM Technicians WHERE TechnicianId = :pId';
-    Q.ParamByName('pId').AsInteger := AId;
-    Q.Open;
-    if not Q.Eof then
-      Result := RowToTechnician(Q);
+    Query.ParamByName('pId').AsInteger := AId;
+    Query.Open;
+    if not Query.Eof then
+      Result := MapRowToEntity(Query);
   finally
-    Q.Free;
+    Query.Free;
   end;
 end;
 

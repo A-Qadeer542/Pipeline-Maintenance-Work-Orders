@@ -31,10 +31,13 @@ type
     FConn: TFDConnection;
     FRepo: IWorkOrderRepository;
     FService: TWorkOrderService;
-    procedure SetupGrid;
-    procedure PopulateFilters;
-    procedure RefreshGrid;
-    function  SelectedId: Integer;
+    procedure InitializeGridColumns;
+    procedure InitializeFilterDropdowns;
+    procedure ReloadWorkOrderGrid;
+    function  BuildFilterFromUI: TWorkOrderFilter;
+    function  GetSelectedWorkOrderId: Integer;
+    procedure OpenEditDialog(AWorkOrderId: Integer);
+    procedure ShowValidationMessage(const AMessage: string);
   end;
 
 var
@@ -66,9 +69,9 @@ begin
   FRepo    := TWorkOrderRepository.Create(FConn);
   FService := TWorkOrderService.Create(FRepo);
 
-  PopulateFilters;
-  SetupGrid;
-  RefreshGrid;
+  InitializeFilterDropdowns;
+  InitializeGridColumns;
+  ReloadWorkOrderGrid;
 end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
@@ -77,9 +80,9 @@ begin
   FreeAndNil(FConn);
 end;
 
-{ --- helpers --- }
+{ --- UI initialisation --- }
 
-procedure TMainForm.PopulateFilters;
+procedure TMainForm.InitializeFilterDropdowns;
 var
   S: TWorkOrderStatus;
   P: TWorkOrderPriority;
@@ -97,7 +100,7 @@ begin
   cmbPriority.ItemIndex := 0;
 end;
 
-procedure TMainForm.SetupGrid;
+procedure TMainForm.InitializeGridColumns;
 begin
   grdOrders.FixedRows := 1;
   grdOrders.FixedCols := 0;
@@ -120,108 +123,126 @@ begin
   grdOrders.ColWidths[5] := 120;
 end;
 
-procedure TMainForm.RefreshGrid;
+{ --- data loading --- }
+
+function TMainForm.BuildFilterFromUI: TWorkOrderFilter;
+begin
+  Result := TWorkOrderFilter.None;
+
+  if cmbStatus.ItemIndex > 0 then
+  begin
+    Result.Status          := TWorkOrderStatus(cmbStatus.ItemIndex - 1);
+    Result.HasStatusFilter := True;
+  end;
+
+  if cmbPriority.ItemIndex > 0 then
+  begin
+    Result.Priority          := TWorkOrderPriority(cmbPriority.ItemIndex - 1);
+    Result.HasPriorityFilter := True;
+  end;
+end;
+
+procedure TMainForm.ReloadWorkOrderGrid;
 var
-  List: TObjectList<TWorkOrder>;
-  FilterStatus: Boolean;
-  FilterPriority: Boolean;
-  S: TWorkOrderStatus;
-  P: TWorkOrderPriority;
+  WorkOrders: TObjectList<TWorkOrder>;
   i: Integer;
 begin
-  FilterStatus   := cmbStatus.ItemIndex > 0;
-  FilterPriority := cmbPriority.ItemIndex > 0;
-
-  if FilterStatus then
-    S := TWorkOrderStatus(cmbStatus.ItemIndex - 1)
-  else
-    S := woNew;
-
-  if FilterPriority then
-    P := TWorkOrderPriority(cmbPriority.ItemIndex - 1)
-  else
-    P := woLow;
-
-  List := FService.List(S, P, FilterStatus, FilterPriority);
+  WorkOrders := FService.FetchWorkOrders(BuildFilterFromUI);
   try
-    if List.Count = 0 then
+    if WorkOrders.Count = 0 then
     begin
       grdOrders.RowCount := 2;
       grdOrders.Rows[1].Clear;
     end
     else
-      grdOrders.RowCount := List.Count + 1;
+      grdOrders.RowCount := WorkOrders.Count + 1;
 
-    for i := 0 to List.Count - 1 do
+    for i := 0 to WorkOrders.Count - 1 do
     begin
-      grdOrders.Cells[0, i + 1] := IntToStr(List[i].Id);
-      grdOrders.Cells[1, i + 1] := List[i].Title;
-      grdOrders.Cells[2, i + 1] := List[i].Location;
-      grdOrders.Cells[3, i + 1] := List[i].PriorityLabel;
-      grdOrders.Cells[4, i + 1] := List[i].StatusLabel;
-      grdOrders.Cells[5, i + 1] := List[i].AssignedTechnicianName;
+      grdOrders.Cells[0, i + 1] := IntToStr(WorkOrders[i].Id);
+      grdOrders.Cells[1, i + 1] := WorkOrders[i].Title;
+      grdOrders.Cells[2, i + 1] := WorkOrders[i].Location;
+      grdOrders.Cells[3, i + 1] := WorkOrders[i].PriorityLabel;
+      grdOrders.Cells[4, i + 1] := WorkOrders[i].StatusLabel;
+      grdOrders.Cells[5, i + 1] := WorkOrders[i].AssignedTechnicianName;
     end;
   finally
-    List.Free;
+    WorkOrders.Free;
   end;
 end;
 
-function TMainForm.SelectedId: Integer;
+function TMainForm.GetSelectedWorkOrderId: Integer;
 begin
   if grdOrders.Row < 1 then
     Exit(-1);
   Result := StrToIntDef(grdOrders.Cells[0, grdOrders.Row], -1);
 end;
 
+{ --- shared helpers --- }
+
+procedure TMainForm.OpenEditDialog(AWorkOrderId: Integer);
+begin
+  if TWorkOrderForm.ShowEditDialog(FService, AWorkOrderId) then
+    ReloadWorkOrderGrid;
+end;
+
+procedure TMainForm.ShowValidationMessage(const AMessage: string);
+begin
+  MessageDlg(AMessage, mtWarning, [mbOK], 0);
+end;
+
 { --- event handlers --- }
 
 procedure TMainForm.btnFilterClick(Sender: TObject);
 begin
-  RefreshGrid;
+  ReloadWorkOrderGrid;
 end;
 
 procedure TMainForm.btnCreateClick(Sender: TObject);
 begin
-  if TWorkOrderForm.ExecuteNew(FService) then
-    RefreshGrid;
+  if TWorkOrderForm.ShowCreateDialog(FService) then
+    ReloadWorkOrderGrid;
 end;
 
 procedure TMainForm.btnEditClick(Sender: TObject);
 var
   Id: Integer;
 begin
-  Id := SelectedId;
+  Id := GetSelectedWorkOrderId;
   if Id < 1 then
   begin
-    MessageDlg('Select a work order first.', mtInformation, [mbOK], 0);
+    ShowValidationMessage('Select a work order first.');
     Exit;
   end;
-  if TWorkOrderForm.ExecuteEdit(FService, Id) then
-    RefreshGrid;
+  OpenEditDialog(Id);
 end;
 
 procedure TMainForm.btnAdvanceClick(Sender: TObject);
 var
   Id: Integer;
 begin
-  Id := SelectedId;
+  Id := GetSelectedWorkOrderId;
   if Id < 1 then
   begin
-    MessageDlg('Select a work order first.', mtInformation, [mbOK], 0);
+    ShowValidationMessage('Select a work order first.');
     Exit;
   end;
   try
-    FService.AdvanceStatus(Id);
-    RefreshGrid;
+    FService.AdvanceWorkOrderStatus(Id);
+    ReloadWorkOrderGrid;
   except
     on E: EWorkOrderValidation do
-      MessageDlg(E.Message, mtWarning, [mbOK], 0);
+      ShowValidationMessage(E.Message);
   end;
 end;
 
 procedure TMainForm.grdOrdersDblClick(Sender: TObject);
+var
+  Id: Integer;
 begin
-  btnEditClick(Sender);
+  Id := GetSelectedWorkOrderId;
+  if Id > 0 then
+    OpenEditDialog(Id);
 end;
 
 end.

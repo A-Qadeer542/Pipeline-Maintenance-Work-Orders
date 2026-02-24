@@ -14,43 +14,52 @@ uses
 
 type
   TDBConnectionFactory = class
+  private
+    class function ResolveConfigPath: string;
+    class procedure ApplyConnectionParams(AConn: TFDConnection; AIni: TIniFile);
   public
     class function CreateConnection: TFDConnection;
   end;
 
 implementation
 
+class function TDBConnectionFactory.ResolveConfigPath: string;
+begin
+  Result := ExtractFilePath(ParamStr(0)) + 'config\app.ini';
+  if not FileExists(Result) then
+    raise Exception.CreateFmt('Configuration file not found: %s', [Result]);
+end;
+
+class procedure TDBConnectionFactory.ApplyConnectionParams(AConn: TFDConnection; AIni: TIniFile);
+var
+  User: string;
+begin
+  AConn.LoginPrompt := False;
+  AConn.Params.DriverID := 'MSSQL';
+  AConn.Params.Database := AIni.ReadString('db', 'database', 'PipelineMaintenance');
+  AConn.Params.Add('Server=' + AIni.ReadString('db', 'server', '(localdb)\MSSQLLocalDB'));
+
+  User := AIni.ReadString('db', 'user', '');
+  if User <> '' then
+  begin
+    AConn.Params.UserName := User;
+    AConn.Params.Password := AIni.ReadString('db', 'password', '');
+  end
+  else
+    AConn.Params.Add('OsAuthent=Yes');
+
+  AConn.Params.Add('Encrypt=No');
+end;
+
 class function TDBConnectionFactory.CreateConnection: TFDConnection;
 var
-  Conn: TFDConnection;
   Ini: TIniFile;
-  IniPath, User: string;
 begin
-  IniPath := ExtractFilePath(ParamStr(0)) + 'config\app.ini';
-
-  if not FileExists(IniPath) then
-    raise Exception.CreateFmt('Configuration file not found: %s', [IniPath]);
-
-  Ini := TIniFile.Create(IniPath);
-  Conn := TFDConnection.Create(nil);
+  Ini := TIniFile.Create(ResolveConfigPath);
+  Result := TFDConnection.Create(nil);
   try
-    Conn.LoginPrompt := False;
-    Conn.Params.DriverID := 'MSSQL';
-    Conn.Params.Database := Ini.ReadString('db', 'database', 'PipelineMaintenance');
-    Conn.Params.Add('Server=' + Ini.ReadString('db', 'server', '(localdb)\MSSQLLocalDB'));
-
-    User := Ini.ReadString('db', 'user', '');
-    if User <> '' then
-    begin
-      Conn.Params.UserName := User;
-      Conn.Params.Password := Ini.ReadString('db', 'password', '');
-    end
-    else
-      Conn.Params.Add('OsAuthent=Yes');
-
-    Conn.Params.Add('Encrypt=No');
-    Conn.Connected := True;
-    Result := Conn;
+    ApplyConnectionParams(Result, Ini);
+    Result.Connected := True;
   finally
     Ini.Free;
   end;
