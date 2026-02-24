@@ -11,33 +11,42 @@ uses
 type
   IWorkOrderRepository = interface
     ['{E8A1A6EF-0C1C-4B77-B6CE-7A2BBF76A3A4}']
-    function GetAll(const AStatus: TWorkOrderStatus; const APriority: TWorkOrderPriority;
-      const AUseStatus, AUsePriority: Boolean): TObjectList<TWorkOrder>;
-    function GetById(const AId: Integer): TWorkOrder;
-    function Insert(const AWorkOrder: TWorkOrder): Integer;
-    procedure Update(const AWorkOrder: TWorkOrder);
-    procedure UpdateStatus(const AId: Integer; const AStatus: TWorkOrderStatus);
+    function GetAll(AStatus: TWorkOrderStatus; APriority: TWorkOrderPriority;
+      AFilterStatus, AFilterPriority: Boolean): TObjectList<TWorkOrder>;
+    function GetById(AId: Integer): TWorkOrder;
+    function Insert(AWO: TWorkOrder): Integer;
+    procedure Update(AWO: TWorkOrder);
+    procedure UpdateStatus(AId: Integer; ANewStatus: TWorkOrderStatus);
   end;
 
   TWorkOrderRepository = class(TInterfacedObject, IWorkOrderRepository)
   private
     FConn: TFDConnection;
-    function StatusToDb(const AStatus: TWorkOrderStatus): string;
-    function PriorityToDb(const APriority: TWorkOrderPriority): string;
-    function DbToStatus(const AValue: string): TWorkOrderStatus;
-    function DbToPriority(const AValue: string): TWorkOrderPriority;
-    function MapQueryToWorkOrder(AQuery: TFDQuery): TWorkOrder;
+    function RowToWorkOrder(Q: TFDQuery): TWorkOrder;
+    function DbToStatus(const S: string): TWorkOrderStatus;
+    function DbToPriority(const S: string): TWorkOrderPriority;
   public
     constructor Create(AConn: TFDConnection);
-    function GetAll(const AStatus: TWorkOrderStatus; const APriority: TWorkOrderPriority;
-      const AUseStatus, AUsePriority: Boolean): TObjectList<TWorkOrder>;
-    function GetById(const AId: Integer): TWorkOrder;
-    function Insert(const AWorkOrder: TWorkOrder): Integer;
-    procedure Update(const AWorkOrder: TWorkOrder);
-    procedure UpdateStatus(const AId: Integer; const AStatus: TWorkOrderStatus);
+
+    function GetAll(AStatus: TWorkOrderStatus; APriority: TWorkOrderPriority;
+      AFilterStatus, AFilterPriority: Boolean): TObjectList<TWorkOrder>;
+    function GetById(AId: Integer): TWorkOrder;
+    function Insert(AWO: TWorkOrder): Integer;
+    procedure Update(AWO: TWorkOrder);
+    procedure UpdateStatus(AId: Integer; ANewStatus: TWorkOrderStatus);
   end;
 
 implementation
+
+const
+  SQL_BASE_COLUMNS =
+    'wo.WorkOrderId, wo.Title, wo.[Description], wo.[Location], ' +
+    'wo.Priority, wo.[Status], wo.AssignedTechnicianId, '          +
+    'wo.CreatedAt, wo.UpdatedAt, t.FullName AS TechnicianName';
+
+  SQL_BASE_FROM =
+    ' FROM WorkOrders wo' +
+    ' LEFT JOIN Technicians t ON t.TechnicianId = wo.AssignedTechnicianId';
 
 { TWorkOrderRepository }
 
@@ -47,64 +56,81 @@ begin
   FConn := AConn;
 end;
 
-function TWorkOrderRepository.DbToPriority(const AValue: string): TWorkOrderPriority;
+function TWorkOrderRepository.DbToPriority(const S: string): TWorkOrderPriority;
+var
+  P: TWorkOrderPriority;
 begin
-  if SameText(AValue, 'Low') then
-    Result := woLow
-  else if SameText(AValue, 'Medium') then
-    Result := woMedium
-  else
-    Result := woHigh;
+  for P := Low(TWorkOrderPriority) to High(TWorkOrderPriority) do
+    if SameText(WorkOrderPriorityDbTokens[P], S) then
+      Exit(P);
+  Result := woMedium;
 end;
 
-function TWorkOrderRepository.DbToStatus(const AValue: string): TWorkOrderStatus;
+function TWorkOrderRepository.DbToStatus(const S: string): TWorkOrderStatus;
+var
+  St: TWorkOrderStatus;
 begin
-  if SameText(AValue, 'New') then
-    Result := woNew
-  else if SameText(AValue, 'InProgress') then
-    Result := woInProgress
-  else
-    Result := woCompleted;
+  for St := Low(TWorkOrderStatus) to High(TWorkOrderStatus) do
+    if SameText(WorkOrderStatusDbTokens[St], S) then
+      Exit(St);
+  Result := woNew;
 end;
 
-function TWorkOrderRepository.GetAll(const AStatus: TWorkOrderStatus;
-  const APriority: TWorkOrderPriority; const AUseStatus, AUsePriority: Boolean): TObjectList<TWorkOrder>;
+function TWorkOrderRepository.RowToWorkOrder(Q: TFDQuery): TWorkOrder;
+begin
+  Result := TWorkOrder.Create;
+  Result.Id                    := Q.FieldByName('WorkOrderId').AsInteger;
+  Result.Title                 := Q.FieldByName('Title').AsString;
+  Result.Description           := Q.FieldByName('Description').AsString;
+  Result.Location              := Q.FieldByName('Location').AsString;
+  Result.Priority              := DbToPriority(Q.FieldByName('Priority').AsString);
+  Result.Status                := DbToStatus(Q.FieldByName('Status').AsString);
+  Result.AssignedTechnicianId  := Q.FieldByName('AssignedTechnicianId').AsInteger;
+  Result.AssignedTechnicianName:= Q.FieldByName('TechnicianName').AsString;
+  Result.CreatedAt             := Q.FieldByName('CreatedAt').AsDateTime;
+  Result.UpdatedAt             := Q.FieldByName('UpdatedAt').AsDateTime;
+end;
+
+{ ---------- queries ---------- }
+
+function TWorkOrderRepository.GetAll(AStatus: TWorkOrderStatus;
+  APriority: TWorkOrderPriority;
+  AFilterStatus, AFilterPriority: Boolean): TObjectList<TWorkOrder>;
 var
   Q: TFDQuery;
-  SQL: TStringList;
+  WhereClause: string;
 begin
   Result := TObjectList<TWorkOrder>.Create(True);
   Q := TFDQuery.Create(nil);
-  SQL := TStringList.Create;
   try
     Q.Connection := FConn;
-    SQL.Add('SELECT WorkOrderId, Title, Description, Location, Priority, Status,');
-    SQL.Add('       AssignedTechnicianId, CreatedAt, UpdatedAt');
-    SQL.Add('FROM WorkOrders');
-    SQL.Add('WHERE 1 = 1');
-    if AUseStatus then
-      SQL.Add('  AND Status = :Status');
-    if AUsePriority then
-      SQL.Add('  AND Priority = :Priority');
-    SQL.Add('ORDER BY CreatedAt DESC');
-    Q.SQL.Text := SQL.Text;
-    if AUseStatus then
-      Q.ParamByName('Status').AsString := StatusToDb(AStatus);
-    if AUsePriority then
-      Q.ParamByName('Priority').AsString := PriorityToDb(APriority);
+
+    WhereClause := ' WHERE 1=1';
+    if AFilterStatus then
+      WhereClause := WhereClause + ' AND wo.[Status] = :pStatus';
+    if AFilterPriority then
+      WhereClause := WhereClause + ' AND wo.Priority = :pPriority';
+
+    Q.SQL.Text := 'SELECT ' + SQL_BASE_COLUMNS + SQL_BASE_FROM +
+                  WhereClause + ' ORDER BY wo.CreatedAt DESC';
+
+    if AFilterStatus then
+      Q.ParamByName('pStatus').AsString := WorkOrderStatusDbTokens[AStatus];
+    if AFilterPriority then
+      Q.ParamByName('pPriority').AsString := WorkOrderPriorityDbTokens[APriority];
+
     Q.Open;
     while not Q.Eof do
     begin
-      Result.Add(MapQueryToWorkOrder(Q));
+      Result.Add(RowToWorkOrder(Q));
       Q.Next;
     end;
   finally
-    SQL.Free;
     Q.Free;
   end;
 end;
 
-function TWorkOrderRepository.GetById(const AId: Integer): TWorkOrder;
+function TWorkOrderRepository.GetById(AId: Integer): TWorkOrder;
 var
   Q: TFDQuery;
 begin
@@ -112,20 +138,18 @@ begin
   Q := TFDQuery.Create(nil);
   try
     Q.Connection := FConn;
-    Q.SQL.Text :=
-      'SELECT WorkOrderId, Title, Description, Location, Priority, Status,' +
-      ' AssignedTechnicianId, CreatedAt, UpdatedAt' +
-      ' FROM WorkOrders WHERE WorkOrderId = :Id';
-    Q.ParamByName('Id').AsInteger := AId;
+    Q.SQL.Text := 'SELECT ' + SQL_BASE_COLUMNS + SQL_BASE_FROM +
+                  ' WHERE wo.WorkOrderId = :pId';
+    Q.ParamByName('pId').AsInteger := AId;
     Q.Open;
     if not Q.Eof then
-      Result := MapQueryToWorkOrder(Q);
+      Result := RowToWorkOrder(Q);
   finally
     Q.Free;
   end;
 end;
 
-function TWorkOrderRepository.Insert(const AWorkOrder: TWorkOrder): Integer;
+function TWorkOrderRepository.Insert(AWO: TWorkOrder): Integer;
 var
   Q: TFDQuery;
 begin
@@ -133,64 +157,35 @@ begin
   try
     Q.Connection := FConn;
     Q.SQL.Text :=
-      'INSERT INTO WorkOrders (Title, Description, Location, Priority, Status,' +
-      ' AssignedTechnicianId, CreatedAt, UpdatedAt) ' +
-      'OUTPUT INSERTED.WorkOrderId ' +
-      'VALUES (:Title, :Description, :Location, :Priority, :Status,' +
-      ' :AssignedTechnicianId, :CreatedAt, :UpdatedAt)';
-    Q.ParamByName('Title').AsString := AWorkOrder.Title;
-    Q.ParamByName('Description').AsString := AWorkOrder.Description;
-    Q.ParamByName('Location').AsString := AWorkOrder.Location;
-    Q.ParamByName('Priority').AsString := PriorityToDb(AWorkOrder.Priority);
-    Q.ParamByName('Status').AsString := StatusToDb(AWorkOrder.Status);
-    if AWorkOrder.AssignedTechnicianId = 0 then
-      Q.ParamByName('AssignedTechnicianId').Clear
+      'INSERT INTO WorkOrders '                                              +
+      '(Title, [Description], [Location], Priority, [Status], '             +
+      ' AssignedTechnicianId, CreatedAt, UpdatedAt) '                        +
+      'OUTPUT INSERTED.WorkOrderId '                                         +
+      'VALUES (:pTitle, :pDesc, :pLoc, :pPriority, :pStatus, '              +
+      ' :pTechId, :pCreated, :pUpdated)';
+
+    Q.ParamByName('pTitle').AsString    := AWO.Title;
+    Q.ParamByName('pDesc').AsString     := AWO.Description;
+    Q.ParamByName('pLoc').AsString      := AWO.Location;
+    Q.ParamByName('pPriority').AsString := WorkOrderPriorityDbTokens[AWO.Priority];
+    Q.ParamByName('pStatus').AsString   := WorkOrderStatusDbTokens[AWO.Status];
+
+    if AWO.AssignedTechnicianId > 0 then
+      Q.ParamByName('pTechId').AsInteger := AWO.AssignedTechnicianId
     else
-      Q.ParamByName('AssignedTechnicianId').AsInteger := AWorkOrder.AssignedTechnicianId;
-    Q.ParamByName('CreatedAt').AsDateTime := AWorkOrder.CreatedAt;
-    Q.ParamByName('UpdatedAt').AsDateTime := AWorkOrder.UpdatedAt;
+      Q.ParamByName('pTechId').Clear;
+
+    Q.ParamByName('pCreated').AsDateTime := AWO.CreatedAt;
+    Q.ParamByName('pUpdated').AsDateTime := AWO.UpdatedAt;
     Q.Open;
+
     Result := Q.Fields[0].AsInteger;
   finally
     Q.Free;
   end;
 end;
 
-function TWorkOrderRepository.MapQueryToWorkOrder(AQuery: TFDQuery): TWorkOrder;
-begin
-  Result := TWorkOrder.Create;
-  Result.Id := AQuery.FieldByName('WorkOrderId').AsInteger;
-  Result.Title := AQuery.FieldByName('Title').AsString;
-  Result.Description := AQuery.FieldByName('Description').AsString;
-  Result.Location := AQuery.FieldByName('Location').AsString;
-  Result.Priority := DbToPriority(AQuery.FieldByName('Priority').AsString);
-  Result.Status := DbToStatus(AQuery.FieldByName('Status').AsString);
-  Result.AssignedTechnicianId := AQuery.FieldByName('AssignedTechnicianId').AsInteger;
-  Result.CreatedAt := AQuery.FieldByName('CreatedAt').AsDateTime;
-  Result.UpdatedAt := AQuery.FieldByName('UpdatedAt').AsDateTime;
-end;
-
-function TWorkOrderRepository.PriorityToDb(const APriority: TWorkOrderPriority): string;
-begin
-  case APriority of
-    woLow: Result := 'Low';
-    woMedium: Result := 'Medium';
-  else
-    Result := 'High';
-  end;
-end;
-
-function TWorkOrderRepository.StatusToDb(const AStatus: TWorkOrderStatus): string;
-begin
-  case AStatus of
-    woNew: Result := 'New';
-    woInProgress: Result := 'InProgress';
-  else
-    Result := 'Completed';
-  end;
-end;
-
-procedure TWorkOrderRepository.Update(const AWorkOrder: TWorkOrder);
+procedure TWorkOrderRepository.Update(AWO: TWorkOrder);
 var
   Q: TFDQuery;
 begin
@@ -198,33 +193,36 @@ begin
   try
     Q.Connection := FConn;
     Q.SQL.Text :=
-      'UPDATE WorkOrders ' +
-      'SET Title = :Title,' +
-      ' Description = :Description,' +
-      ' Location = :Location,' +
-      ' Priority = :Priority,' +
-      ' Status = :Status,' +
-      ' AssignedTechnicianId = :AssignedTechnicianId,' +
-      ' UpdatedAt = :UpdatedAt ' +
-      'WHERE WorkOrderId = :Id';
-    Q.ParamByName('Id').AsInteger := AWorkOrder.Id;
-    Q.ParamByName('Title').AsString := AWorkOrder.Title;
-    Q.ParamByName('Description').AsString := AWorkOrder.Description;
-    Q.ParamByName('Location').AsString := AWorkOrder.Location;
-    Q.ParamByName('Priority').AsString := PriorityToDb(AWorkOrder.Priority);
-    Q.ParamByName('Status').AsString := StatusToDb(AWorkOrder.Status);
-    if AWorkOrder.AssignedTechnicianId = 0 then
-      Q.ParamByName('AssignedTechnicianId').Clear
+      'UPDATE WorkOrders SET '                          +
+      '  Title = :pTitle, '                             +
+      '  [Description] = :pDesc, '                      +
+      '  [Location] = :pLoc, '                           +
+      '  Priority = :pPriority, '                       +
+      '  [Status] = :pStatus, '                          +
+      '  AssignedTechnicianId = :pTechId, '             +
+      '  UpdatedAt = :pUpdated '                        +
+      'WHERE WorkOrderId = :pId';
+
+    Q.ParamByName('pId').AsInteger      := AWO.Id;
+    Q.ParamByName('pTitle').AsString    := AWO.Title;
+    Q.ParamByName('pDesc').AsString     := AWO.Description;
+    Q.ParamByName('pLoc').AsString      := AWO.Location;
+    Q.ParamByName('pPriority').AsString := WorkOrderPriorityDbTokens[AWO.Priority];
+    Q.ParamByName('pStatus').AsString   := WorkOrderStatusDbTokens[AWO.Status];
+
+    if AWO.AssignedTechnicianId > 0 then
+      Q.ParamByName('pTechId').AsInteger := AWO.AssignedTechnicianId
     else
-      Q.ParamByName('AssignedTechnicianId').AsInteger := AWorkOrder.AssignedTechnicianId;
-    Q.ParamByName('UpdatedAt').AsDateTime := AWorkOrder.UpdatedAt;
+      Q.ParamByName('pTechId').Clear;
+
+    Q.ParamByName('pUpdated').AsDateTime := AWO.UpdatedAt;
     Q.ExecSQL;
   finally
     Q.Free;
   end;
 end;
 
-procedure TWorkOrderRepository.UpdateStatus(const AId: Integer; const AStatus: TWorkOrderStatus);
+procedure TWorkOrderRepository.UpdateStatus(AId: Integer; ANewStatus: TWorkOrderStatus);
 var
   Q: TFDQuery;
 begin
@@ -232,9 +230,10 @@ begin
   try
     Q.Connection := FConn;
     Q.SQL.Text :=
-      'UPDATE WorkOrders SET Status = :Status, UpdatedAt = SYSUTCDATETIME() WHERE WorkOrderId = :Id';
-    Q.ParamByName('Id').AsInteger := AId;
-    Q.ParamByName('Status').AsString := StatusToDb(AStatus);
+      'UPDATE WorkOrders SET [Status] = :pStatus, UpdatedAt = SYSUTCDATETIME() ' +
+      'WHERE WorkOrderId = :pId';
+    Q.ParamByName('pId').AsInteger    := AId;
+    Q.ParamByName('pStatus').AsString := WorkOrderStatusDbTokens[ANewStatus];
     Q.ExecSQL;
   finally
     Q.Free;

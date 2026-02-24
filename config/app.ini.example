@@ -1,5 +1,18 @@
+; Database connection settings
+; Copy this file to app.ini and fill in your values.
+;
+; For LocalDB (typical dev setup):
+;   server=(localdb)\MSSQLLocalDB
+;   user and password can be left blank when using Windows auth
+;   (make sure OsAuthent=Yes is set in uDBConnection)
+;
+; For a named SQL Server instance:
+;   server=MYSERVER\SQLEXPRESS
+;   user=sa
+;   password=<your password>
+
 [db]
-server=YOUR_SQL_SERVER
+server=(localdb)\MSSQLLocalDB
 database=PipelineMaintenance
-user=app_user
-password=app_password
+user=
+password=

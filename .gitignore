@@ -1,0 +1,37 @@
+# Delphi compiled output
+*.exe
+*.dll
+*.bpl
+*.dcu
+*.dcp
+*.obj
+*.o
+*.map
+*.pdb
+*.tds
+*.lib
+*.a
+
+# Delphi IDE / project local state
+*.dproj.local
+*.identcache
+*.local
+*.stat
+*.tvsconfig
+*.dsk
+__history/
+__recovery/
+
+# Build output folders
+Win32/
+Win64/
+OSX32/
+OSX64/
+Linux64/
+
+# Backup files
+*.~*
+*.bak
+
+# Sensitive config (keep the .example template)
+config/app.ini

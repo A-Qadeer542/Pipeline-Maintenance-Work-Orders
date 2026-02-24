@@ -22,24 +22,35 @@ implementation
 
 class function TDBConnectionFactory.CreateConnection: TFDConnection;
 var
-  LConn: TFDConnection;
+  Conn: TFDConnection;
   Ini: TIniFile;
-  BasePath: string;
+  IniPath, User: string;
 begin
-  BasePath := ExtractFilePath(ParamStr(0));
-  Ini := TIniFile.Create(BasePath + 'config\app.ini');
-  LConn := TFDConnection.Create(nil);
+  IniPath := ExtractFilePath(ParamStr(0)) + 'config\app.ini';
+
+  if not FileExists(IniPath) then
+    raise Exception.CreateFmt('Configuration file not found: %s', [IniPath]);
+
+  Ini := TIniFile.Create(IniPath);
+  Conn := TFDConnection.Create(nil);
   try
-    LConn.LoginPrompt := False;
-    LConn.Params.DriverID := 'MSSQL';
-    LConn.Params.Database := Ini.ReadString('db', 'database', '');
-    LConn.Params.UserName := Ini.ReadString('db', 'user', '');
-    LConn.Params.Password := Ini.ReadString('db', 'password', '');
-    LConn.Params.Add('Server=' + Ini.ReadString('db', 'server', ''));
-    LConn.Params.Add('Trusted_Connection=Yes');
-    LConn.Params.Add('Encrypt=No'); // Adjust to match security requirements
-    LConn.Connected := True;
-    Result := LConn;
+    Conn.LoginPrompt := False;
+    Conn.Params.DriverID := 'MSSQL';
+    Conn.Params.Database := Ini.ReadString('db', 'database', 'PipelineMaintenance');
+    Conn.Params.Add('Server=' + Ini.ReadString('db', 'server', '(localdb)\MSSQLLocalDB'));
+
+    User := Ini.ReadString('db', 'user', '');
+    if User <> '' then
+    begin
+      Conn.Params.UserName := User;
+      Conn.Params.Password := Ini.ReadString('db', 'password', '');
+    end
+    else
+      Conn.Params.Add('OsAuthent=Yes');
+
+    Conn.Params.Add('Encrypt=No');
+    Conn.Connected := True;
+    Result := Conn;
   finally
     Ini.Free;
   end;
