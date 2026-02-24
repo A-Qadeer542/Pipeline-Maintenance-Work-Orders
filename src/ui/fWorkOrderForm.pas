@@ -4,9 +4,9 @@ interface
 
 uses
   Winapi.Windows, Winapi.Messages,
-  System.SysUtils, System.Classes,
+  System.SysUtils, System.Classes, System.Generics.Collections,
   Vcl.Forms, Vcl.Controls, Vcl.StdCtrls, Vcl.Dialogs,
-  uWorkOrder, uWorkOrderService;
+  uWorkOrder, uTechnician, uWorkOrderService;
 
 type
   TWorkOrderForm = class(TForm)
@@ -15,11 +15,13 @@ type
     lblDescription: TLabel;
     lblPriority: TLabel;
     lblStatus: TLabel;
+    lblTechnician: TLabel;
     edtTitle: TEdit;
     edtLocation: TEdit;
     memDescription: TMemo;
     cmbPriority: TComboBox;
     cmbStatus: TComboBox;
+    cmbTechnician: TComboBox;
     btnSave: TButton;
     btnCancel: TButton;
     procedure FormCreate(Sender: TObject);
@@ -28,9 +30,12 @@ type
     FService: TWorkOrderService;
     FEditingId: Integer;
     procedure InitializeDropdowns;
+    procedure LoadTechnicians;
+    procedure SelectTechnicianById(ATechnicianId: Integer);
     procedure PopulateFieldsFromWorkOrder(AId: Integer);
     procedure PersistWorkOrder;
     function  IsEditMode: Boolean;
+    function  GetSelectedTechnicianId: Integer;
   public
     class function ShowCreateDialog(AService: TWorkOrderService): Boolean;
     class function ShowEditDialog(AService: TWorkOrderService; AId: Integer): Boolean;
@@ -51,6 +56,7 @@ begin
     Dlg.FService   := AService;
     Dlg.FEditingId := -1;
     Dlg.Caption    := 'New Work Order';
+    Dlg.LoadTechnicians;
     Dlg.cmbStatus.Enabled := False;
     Result := (Dlg.ShowModal = mrOk);
   finally
@@ -67,6 +73,7 @@ begin
     Dlg.FService   := AService;
     Dlg.FEditingId := AId;
     Dlg.Caption    := Format('Edit Work Order #%d', [AId]);
+    Dlg.LoadTechnicians;
     Dlg.PopulateFieldsFromWorkOrder(AId);
     Result := (Dlg.ShowModal = mrOk);
   finally
@@ -115,6 +122,47 @@ begin
     cmbStatus.Items.Add(WorkOrderStatusLabels[S]);
 end;
 
+procedure TWorkOrderForm.LoadTechnicians;
+var
+  Technicians: TObjectList<TTechnician>;
+  i: Integer;
+begin
+  cmbTechnician.Items.Clear;
+  cmbTechnician.Items.AddObject('(none)', TObject(0));
+
+  Technicians := FService.FetchActiveTechnicians;
+  try
+    for i := 0 to Technicians.Count - 1 do
+      cmbTechnician.Items.AddObject(Technicians[i].FullName,
+        TObject(Technicians[i].Id));
+  finally
+    Technicians.Free;
+  end;
+
+  cmbTechnician.ItemIndex := 0;
+end;
+
+procedure TWorkOrderForm.SelectTechnicianById(ATechnicianId: Integer);
+var
+  i: Integer;
+begin
+  for i := 0 to cmbTechnician.Items.Count - 1 do
+    if Integer(cmbTechnician.Items.Objects[i]) = ATechnicianId then
+    begin
+      cmbTechnician.ItemIndex := i;
+      Exit;
+    end;
+  cmbTechnician.ItemIndex := 0;
+end;
+
+function TWorkOrderForm.GetSelectedTechnicianId: Integer;
+begin
+  if cmbTechnician.ItemIndex > 0 then
+    Result := Integer(cmbTechnician.Items.Objects[cmbTechnician.ItemIndex])
+  else
+    Result := 0;
+end;
+
 procedure TWorkOrderForm.PopulateFieldsFromWorkOrder(AId: Integer);
 var
   WorkOrder: TWorkOrder;
@@ -126,6 +174,7 @@ begin
     memDescription.Text    := WorkOrder.Description;
     cmbPriority.ItemIndex  := Ord(WorkOrder.Priority);
     cmbStatus.ItemIndex    := Ord(WorkOrder.Status);
+    SelectTechnicianById(WorkOrder.AssignedTechnicianId);
   finally
     WorkOrder.Free;
   end;
@@ -137,11 +186,12 @@ var
 begin
   WorkOrder := TWorkOrder.Create;
   try
-    WorkOrder.Id          := FEditingId;
-    WorkOrder.Title       := edtTitle.Text;
-    WorkOrder.Location    := edtLocation.Text;
-    WorkOrder.Description := memDescription.Text;
-    WorkOrder.Priority    := TWorkOrderPriority(cmbPriority.ItemIndex);
+    WorkOrder.Id                   := FEditingId;
+    WorkOrder.Title                := edtTitle.Text;
+    WorkOrder.Location             := edtLocation.Text;
+    WorkOrder.Description          := memDescription.Text;
+    WorkOrder.Priority             := TWorkOrderPriority(cmbPriority.ItemIndex);
+    WorkOrder.AssignedTechnicianId := GetSelectedTechnicianId;
 
     if IsEditMode then
     begin

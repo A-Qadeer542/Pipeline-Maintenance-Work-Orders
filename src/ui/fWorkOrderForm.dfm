@@ -1,6 +1,6 @@
 object WorkOrderForm: TWorkOrderForm
   Caption = 'Work Order'
-  ClientHeight = 380
+  ClientHeight = 420
   ClientWidth = 520
   Position = poMainFormCenter
   OnCreate = FormCreate
@@ -65,24 +65,36 @@ object WorkOrderForm: TWorkOrderForm
     Style = csDropDownList
     TabOrder = 4
   end
+  object lblTechnician: TLabel
+    Left = 16
+    Top = 300
+    Caption = 'Technician:'
+  end
+  object cmbTechnician: TComboBox
+    Left = 96
+    Top = 296
+    Width = 400
+    Style = csDropDownList
+    TabOrder = 5
+  end
   object btnSave: TButton
     Left = 330
-    Top = 320
+    Top = 360
     Width = 80
     Height = 28
     Caption = 'Save'
     Default = True
-    TabOrder = 5
+    TabOrder = 6
     OnClick = btnSaveClick
   end
   object btnCancel: TButton
     Left = 416
-    Top = 320
+    Top = 360
     Width = 80
     Height = 28
     Caption = 'Cancel'
     Cancel = True
     ModalResult = 2
-    TabOrder = 6
+    TabOrder = 7
   end
 end

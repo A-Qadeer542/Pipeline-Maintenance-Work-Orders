@@ -3,7 +3,6 @@ unit uTechnicianRepository;
 interface
 
 uses
-  System.SysUtils,
   System.Generics.Collections,
   FireDAC.Comp.Client,
   uTechnician;
@@ -12,7 +11,6 @@ type
   ITechnicianRepository = interface
     ['{7A1B2A0E-78E1-4FA6-8C4A-B0BC9B3D10A9}']
     function FetchActiveTechnicians: TObjectList<TTechnician>;
-    function FetchTechnicianById(AId: Integer): TTechnician;
   end;
 
   TTechnicianRepository = class(TInterfacedObject, ITechnicianRepository)
@@ -23,7 +21,6 @@ type
   public
     constructor Create(AConnection: TFDConnection);
     function FetchActiveTechnicians: TObjectList<TTechnician>;
-    function FetchTechnicianById(AId: Integer): TTechnician;
   end;
 
 implementation
@@ -66,25 +63,6 @@ begin
       Result.Add(MapRowToEntity(Query));
       Query.Next;
     end;
-  finally
-    Query.Free;
-  end;
-end;
-
-function TTechnicianRepository.FetchTechnicianById(AId: Integer): TTechnician;
-var
-  Query: TFDQuery;
-begin
-  Result := nil;
-  Query := CreateQuery;
-  try
-    Query.SQL.Text :=
-      'SELECT TechnicianId, FullName, Email, Phone, IsActive ' +
-      'FROM Technicians WHERE TechnicianId = :pId';
-    Query.ParamByName('pId').AsInteger := AId;
-    Query.Open;
-    if not Query.Eof then
-      Result := MapRowToEntity(Query);
   finally
     Query.Free;
   end;

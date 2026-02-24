@@ -6,19 +6,24 @@ uses
   System.SysUtils,
   System.Generics.Collections,
   uWorkOrder,
-  uWorkOrderRepository;
+  uTechnician,
+  uWorkOrderRepository,
+  uTechnicianRepository;
 
 type
   TWorkOrderService = class
   private
     FRepo: IWorkOrderRepository;
+    FTechnicianRepo: ITechnicianRepository;
     procedure ValidateRequiredFields(AWorkOrder: TWorkOrder);
     procedure ValidateStatusTransition(ACurrentStatus, ANewStatus: TWorkOrderStatus);
   public
-    constructor Create(ARepository: IWorkOrderRepository);
+    constructor Create(AWorkOrderRepo: IWorkOrderRepository;
+      ATechnicianRepo: ITechnicianRepository);
 
     function  FetchWorkOrders(const AFilter: TWorkOrderFilter): TObjectList<TWorkOrder>;
     function  FetchWorkOrderById(AId: Integer): TWorkOrder;
+    function  FetchActiveTechnicians: TObjectList<TTechnician>;
     function  CreateWorkOrder(AWorkOrder: TWorkOrder): Integer;
     procedure UpdateWorkOrder(AWorkOrder: TWorkOrder);
     procedure AdvanceWorkOrderStatus(AId: Integer);
@@ -26,10 +31,12 @@ type
 
 implementation
 
-constructor TWorkOrderService.Create(ARepository: IWorkOrderRepository);
+constructor TWorkOrderService.Create(AWorkOrderRepo: IWorkOrderRepository;
+  ATechnicianRepo: ITechnicianRepository);
 begin
   inherited Create;
-  FRepo := ARepository;
+  FRepo           := AWorkOrderRepo;
+  FTechnicianRepo := ATechnicianRepo;
 end;
 
 { --- validation --- }
@@ -76,6 +83,11 @@ begin
   Result := FRepo.FetchById(AId);
   if Result = nil then
     raise EWorkOrderValidation.CreateFmt('Work order #%d does not exist.', [AId]);
+end;
+
+function TWorkOrderService.FetchActiveTechnicians: TObjectList<TTechnician>;
+begin
+  Result := FTechnicianRepo.FetchActiveTechnicians;
 end;
 
 function TWorkOrderService.CreateWorkOrder(AWorkOrder: TWorkOrder): Integer;

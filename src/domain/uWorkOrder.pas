@@ -54,13 +54,9 @@ type
     FCreatedAt: TDateTime;
     FUpdatedAt: TDateTime;
   public
-    constructor Create; overload;
-    constructor Create(const ATitle, ALocation: string;
-      APriority: TWorkOrderPriority); overload;
+    constructor Create;
 
-    function IsNewRecord: Boolean;
     function IsCompleted: Boolean;
-    function HasTechnician: Boolean;
     function CanAdvanceStatus: Boolean;
     function NextStatus: TWorkOrderStatus;
     class function IsValidTransition(AFrom, ATo: TWorkOrderStatus): Boolean; static;
@@ -131,28 +127,9 @@ begin
   FPriority := woMedium;
 end;
 
-constructor TWorkOrder.Create(const ATitle, ALocation: string;
-  APriority: TWorkOrderPriority);
-begin
-  Create;
-  FTitle    := ATitle;
-  FLocation := ALocation;
-  FPriority := APriority;
-end;
-
-function TWorkOrder.IsNewRecord: Boolean;
-begin
-  Result := FId < 1;
-end;
-
 function TWorkOrder.IsCompleted: Boolean;
 begin
   Result := FStatus = woCompleted;
-end;
-
-function TWorkOrder.HasTechnician: Boolean;
-begin
-  Result := FAssignedTechnicianId > 0;
 end;
 
 function TWorkOrder.CanAdvanceStatus: Boolean;

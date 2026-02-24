@@ -73,7 +73,7 @@ begin
   FreeAndNil(FContext);
 end;
 
-{ --- UI initialisation --- }
+{ --- UI initialization --- }
 
 procedure TMainForm.InitializeFilterDropdowns;
 var
@@ -119,20 +119,23 @@ end;
 { --- data loading --- }
 
 function TMainForm.BuildFilterFromUI: TWorkOrderFilter;
+var
+  HasStatus: Boolean;
+  HasPriority: Boolean;
 begin
-  Result := TWorkOrderFilter.None;
+  HasStatus   := cmbStatus.ItemIndex > 0;
+  HasPriority := cmbPriority.ItemIndex > 0;
 
-  if cmbStatus.ItemIndex > 0 then
-  begin
-    Result.Status          := TWorkOrderStatus(cmbStatus.ItemIndex - 1);
-    Result.HasStatusFilter := True;
-  end;
-
-  if cmbPriority.ItemIndex > 0 then
-  begin
-    Result.Priority          := TWorkOrderPriority(cmbPriority.ItemIndex - 1);
-    Result.HasPriorityFilter := True;
-  end;
+  if HasStatus and HasPriority then
+    Result := TWorkOrderFilter.ByStatusAndPriority(
+      TWorkOrderStatus(cmbStatus.ItemIndex - 1),
+      TWorkOrderPriority(cmbPriority.ItemIndex - 1))
+  else if HasStatus then
+    Result := TWorkOrderFilter.ByStatus(TWorkOrderStatus(cmbStatus.ItemIndex - 1))
+  else if HasPriority then
+    Result := TWorkOrderFilter.ByPriority(TWorkOrderPriority(cmbPriority.ItemIndex - 1))
+  else
+    Result := TWorkOrderFilter.None;
 end;
 
 procedure TMainForm.ReloadWorkOrderGrid;

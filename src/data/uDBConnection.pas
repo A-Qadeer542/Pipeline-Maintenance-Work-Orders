@@ -7,7 +7,6 @@ uses
   System.IniFiles,
   FireDAC.Comp.Client,
   FireDAC.Stan.Def,
-  FireDAC.Stan.Async,
   FireDAC.Phys.MSSQL,
   FireDAC.Phys.MSSQLDef,
   FireDAC.DApt;
