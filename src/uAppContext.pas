@@ -6,7 +6,6 @@ uses
   System.SysUtils,
   FireDAC.Comp.Client,
   uWorkOrderRepository,
-  uTechnicianRepository,
   uWorkOrderService,
   uDBConnection;
 
@@ -15,7 +14,6 @@ type
   private
     FConnection: TFDConnection;
     FWorkOrderRepo: IWorkOrderRepository;
-    FTechnicianRepo: ITechnicianRepository;
     FWorkOrderService: TWorkOrderService;
   public
     constructor Create;
@@ -29,17 +27,15 @@ implementation
 constructor TAppContext.Create;
 begin
   inherited;
-  FConnection      := TDBConnectionFactory.CreateConnection;
-  FWorkOrderRepo   := TWorkOrderRepository.Create(FConnection);
-  FTechnicianRepo  := TTechnicianRepository.Create(FConnection);
+  FConnection       := TDBConnectionFactory.CreateConnection;
+  FWorkOrderRepo    := TWorkOrderRepository.Create(FConnection);
   FWorkOrderService := TWorkOrderService.Create(FWorkOrderRepo);
 end;
 
 destructor TAppContext.Destroy;
 begin
   FreeAndNil(FWorkOrderService);
-  FWorkOrderRepo  := nil;
-  FTechnicianRepo := nil;
+  FWorkOrderRepo := nil;
   FreeAndNil(FConnection);
   inherited;
 end;

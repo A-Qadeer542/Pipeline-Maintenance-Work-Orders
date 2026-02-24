@@ -4,8 +4,7 @@ interface
 
 uses
   System.SysUtils,
-  System.DateUtils,
-  System.TimeSpan;
+  System.DateUtils;
 
 type
   TWorkOrderStatus   = (woNew, woInProgress, woCompleted);
