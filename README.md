@@ -1,84 +1,78 @@
 # Pipeline Maintenance Work Orders
 
-Desktop application for managing pipeline maintenance work orders — built with Delphi (Object Pascal), VCL, and SQL Server via FireDAC.
+A Delphi VCL desktop app I built for managing pipeline maintenance work orders. Technicians use it to log jobs, track status, and keep tabs on what's assigned where across a pipeline network.
 
-Technicians and engineers use this to create, assign, and track maintenance jobs on oil/gas pipeline infrastructure. Each work order carries a title, description, location, priority, assigned technician, and follows a simple status workflow: **New → In Progress → Completed**.
+Each work order has a title, description, physical location along the pipeline, a priority level, and an assigned technician. Status follows a strict forward-only workflow: **New → In Progress → Completed** — you can't skip steps or go backwards, which keeps the audit trail honest.
 
-## Architecture
+## Why this structure
 
-The project follows a layered architecture to keep concerns separated:
+I wanted the code to be easy to reason about and extend, so I split it into four layers with a strict dependency direction:
 
 ```
+  UI  →  Service  →  Repository  →  Domain
+```
+
+The **domain** layer (`uWorkOrder`, `uTechnician`) has zero dependencies — just plain classes, enums, and constants. Everything else points inward toward it.
+
+**Repositories** own all the SQL. Parameterised queries, enum-to-string mapping, row-to-object hydration — it all lives here. The rest of the app never sees a `TFDQuery`.
+
+**The service** (`TWorkOrderService`) handles validation and workflow rules. It checks required fields, enforces length limits that match the DB schema, and guards status transitions so you can't, say, edit a completed order or jump from New straight to Completed.
+
+**Forms** are deliberately thin. They collect input from the user, hand it to the service, and display results. No business logic, no SQL.
+
+A **composition root** (`TAppContext`) wires everything together — connection, repositories, services — so the UI only ever talks to the service through that single entry point. The main form doesn't know or care how the database connection is created.
+
+## Design decisions worth mentioning
+
+- **`TWorkOrderFilter` record** instead of passing four loose parameters (`AStatus`, `APriority`, `AFilterStatus`, `AFilterPriority`) around. Cleaner signatures, and the record has factory methods like `ByStatus(...)`, `ByPriority(...)`, `ByStatusAndPriority(...)` and `None`.
+
+- **`UtcNow` helper** — the DB defaults use `SYSUTCDATETIME()`, so the Delphi side also stamps UTC via `TTimeZone.Local.ToUniversalTime(Now)`. Mixing local and UTC timestamps is a subtle bug I've seen in production before.
+
+- **`TWorkOrder.IsValidTransition` class method** — status workflow rules live on the entity itself, not buried in the service. The service calls it, the form could call it too for UI hints. Single source of truth.
+
+- **`EWorkOrderValidation` custom exception** — the service raises these; the UI catches them specifically and shows a dialog. Generic exceptions bubble up normally. This keeps the error handling intentional rather than catch-all.
+
+- **Connection factory with proper cleanup** — if `Connected := True` fails, the `TFDConnection` is freed before the exception propagates. Sounds obvious, but it's an easy resource leak to miss.
+
+- **Interface-based repositories** (`IWorkOrderRepository`, `ITechnicianRepository`) — makes it straightforward to swap in a mock or a different storage backend without touching the service or UI.
+
+## Project layout
+
+```
+PipelineMaintenanceWorkOrders.dpr     Entry point
 src/
-  domain/      Entities and enums (TWorkOrder, TTechnician)
-  data/        FireDAC connection factory + repository classes
-  services/    Business logic, validation, workflow rules
-  ui/          VCL forms (main list + create/edit dialog)
-sql/           DDL and seed scripts for SQL Server
-config/        INI-based connection settings (not committed)
+  domain/
+    uWorkOrder.pas          Entity, enums, filter record, validation exception
+    uTechnician.pas         Technician entity
+  data/
+    uDBConnection.pas       Reads config/app.ini, builds TFDConnection
+    uWorkOrderRepository.pas    IWorkOrderRepository + FireDAC implementation
+    uTechnicianRepository.pas   ITechnicianRepository + FireDAC implementation
+  services/
+    uWorkOrderService.pas   Validation, timestamps, status workflow
+  ui/
+    fMain.pas / .dfm        Main grid, filters, action buttons
+    fWorkOrderForm.pas / .dfm   Modal create/edit dialog
+  uAppContext.pas           Composition root — owns connection + services
+sql/
+  create_tables.sql         DDL (idempotent, uses IF NOT EXISTS)
+  seed_data.sql             Sample technicians and work orders
+config/
+  app.ini.example           Connection template (copy to app.ini)
 ```
 
-- **Domain** — plain data classes with no dependencies on the database or UI.
-- **Repositories** — all SQL lives here; parameterised queries, enum ↔ string mapping.
-- **Service** — validation (required fields, length limits) and status-advancement logic. Raises `EWorkOrderValidation` on bad input.
-- **Forms** — thin UI layer; collects user input, calls the service, displays results.
+## Getting started
 
-## Prerequisites
+**Database** — spin up LocalDB or any SQL Server instance, create a database called `PipelineMaintenance`, then run `sql/create_tables.sql` followed by `sql/seed_data.sql`.
 
-| Tool | Version |
-|------|---------|
-| Delphi (Community or higher) | 11+ recommended |
-| SQL Server | 2019+ / LocalDB / Express |
-| SSMS or Azure Data Studio | any recent version |
+**Config** — copy `config/app.ini.example` to `config/app.ini`. For LocalDB with Windows auth, the defaults work as-is (leave user/password blank; the factory detects this and uses OS authentication).
 
-## Getting Started
+**Build** — open `PipelineMaintenanceWorkOrders.dpr` in Delphi (Community Edition works fine), target Win32, hit F9.
 
-### 1. Database
+## What you can do in the app
 
-```sql
--- connect to your SQL Server instance, then:
-CREATE DATABASE PipelineMaintenance;
-```
-
-Switch to the new database and run the two scripts in order:
-
-- `sql/create_tables.sql` — creates `Technicians` and `WorkOrders` with constraints and indexes.
-- `sql/seed_data.sql` — inserts a handful of sample technicians and work orders for testing.
-
-### 2. Configuration
-
-Copy the template and fill in your connection details:
-
-```
-copy config\app.ini.example config\app.ini
-```
-
-For a typical LocalDB setup the defaults in the template already work — just leave `user` and `password` blank (the app falls back to Windows authentication automatically).
-
-### 3. Build & Run
-
-Open `PipelineMaintenanceWorkOrders.dpr` in Delphi, target **Win32**, and hit **F9**.
-
-The main form shows a filterable grid of work orders. From there you can:
-
-- **New Work Order** — opens a dialog to fill in title, location, description, and priority.
-- **Edit** (or double-click a row) — modify an existing work order.
-- **Advance** — moves the selected order to the next status step.
-
-## Project Files
-
-| File | Purpose |
-|------|---------|
-| `PipelineMaintenanceWorkOrders.dpr` | Project entry point |
-| `src/domain/uWorkOrder.pas` | `TWorkOrder` entity, status/priority enums and display labels |
-| `src/domain/uTechnician.pas` | `TTechnician` entity |
-| `src/data/uDBConnection.pas` | Reads `config/app.ini`, creates a `TFDConnection` |
-| `src/data/uWorkOrderRepository.pas` | `IWorkOrderRepository` + SQL implementation |
-| `src/data/uTechnicianRepository.pas` | `ITechnicianRepository` + SQL implementation |
-| `src/services/uWorkOrderService.pas` | Validation, create/update/advance-status logic |
-| `src/ui/fMain.pas` | Main form — grid, filters, action buttons |
-| `src/ui/fWorkOrderForm.pas` | Modal dialog for creating / editing a work order |
-
-## License
-
-Internal / private use.
+- Filter the work order list by status, priority, or both
+- Create a new work order (status is locked to New)
+- Edit an existing order (status can only move forward)
+- Advance status with one click (New → In Progress → Completed)
+- Double-click any row to open the edit dialog

@@ -6,6 +6,7 @@ uses
   fWorkOrderForm    in 'src\ui\fWorkOrderForm.pas'    {WorkOrderForm},
   uWorkOrder        in 'src\domain\uWorkOrder.pas',
   uTechnician       in 'src\domain\uTechnician.pas',
+  uAppContext       in 'src\uAppContext.pas',
   uDBConnection     in 'src\data\uDBConnection.pas',
   uWorkOrderRepository  in 'src\data\uWorkOrderRepository.pas',
   uTechnicianRepository in 'src\data\uTechnicianRepository.pas',

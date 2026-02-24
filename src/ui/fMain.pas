@@ -6,8 +6,7 @@ uses
   Winapi.Windows, Winapi.Messages,
   System.SysUtils, System.Classes, System.Generics.Collections,
   Vcl.Forms, Vcl.Controls, Vcl.StdCtrls, Vcl.Grids, Vcl.Dialogs,
-  FireDAC.Comp.Client,
-  uWorkOrder, uWorkOrderService, uWorkOrderRepository, uDBConnection;
+  uWorkOrder, uWorkOrderService, uAppContext;
 
 type
   TMainForm = class(TForm)
@@ -28,9 +27,7 @@ type
     procedure btnAdvanceClick(Sender: TObject);
     procedure grdOrdersDblClick(Sender: TObject);
   private
-    FConn: TFDConnection;
-    FRepo: IWorkOrderRepository;
-    FService: TWorkOrderService;
+    FContext: TAppContext;
     procedure InitializeGridColumns;
     procedure InitializeFilterDropdowns;
     procedure ReloadWorkOrderGrid;
@@ -55,7 +52,7 @@ uses
 procedure TMainForm.FormCreate(Sender: TObject);
 begin
   try
-    FConn := TDBConnectionFactory.CreateConnection;
+    FContext := TAppContext.Create;
   except
     on E: Exception do
     begin
@@ -66,9 +63,6 @@ begin
     end;
   end;
 
-  FRepo    := TWorkOrderRepository.Create(FConn);
-  FService := TWorkOrderService.Create(FRepo);
-
   InitializeFilterDropdowns;
   InitializeGridColumns;
   ReloadWorkOrderGrid;
@@ -76,8 +70,7 @@ end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
 begin
-  FreeAndNil(FService);
-  FreeAndNil(FConn);
+  FreeAndNil(FContext);
 end;
 
 { --- UI initialisation --- }
@@ -147,7 +140,7 @@ var
   WorkOrders: TObjectList<TWorkOrder>;
   i: Integer;
 begin
-  WorkOrders := FService.FetchWorkOrders(BuildFilterFromUI);
+  WorkOrders := FContext.WorkOrderService.FetchWorkOrders(BuildFilterFromUI);
   try
     if WorkOrders.Count = 0 then
     begin
@@ -182,7 +175,7 @@ end;
 
 procedure TMainForm.OpenEditDialog(AWorkOrderId: Integer);
 begin
-  if TWorkOrderForm.ShowEditDialog(FService, AWorkOrderId) then
+  if TWorkOrderForm.ShowEditDialog(FContext.WorkOrderService, AWorkOrderId) then
     ReloadWorkOrderGrid;
 end;
 
@@ -200,7 +193,7 @@ end;
 
 procedure TMainForm.btnCreateClick(Sender: TObject);
 begin
-  if TWorkOrderForm.ShowCreateDialog(FService) then
+  if TWorkOrderForm.ShowCreateDialog(FContext.WorkOrderService) then
     ReloadWorkOrderGrid;
 end;
 
@@ -228,7 +221,7 @@ begin
     Exit;
   end;
   try
-    FService.AdvanceWorkOrderStatus(Id);
+    FContext.WorkOrderService.AdvanceWorkOrderStatus(Id);
     ReloadWorkOrderGrid;
   except
     on E: EWorkOrderValidation do

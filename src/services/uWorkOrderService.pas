@@ -13,8 +13,7 @@ type
   private
     FRepo: IWorkOrderRepository;
     procedure ValidateRequiredFields(AWorkOrder: TWorkOrder);
-    procedure StampTimestampsForCreate(AWorkOrder: TWorkOrder);
-    procedure StampTimestampForUpdate(AWorkOrder: TWorkOrder);
+    procedure ValidateStatusTransition(ACurrentStatus, ANewStatus: TWorkOrderStatus);
   public
     constructor Create(ARepository: IWorkOrderRepository);
 
@@ -46,20 +45,22 @@ begin
   if AWorkOrder.Location.Trim.IsEmpty then
     raise EWorkOrderValidation.Create('Location cannot be blank.');
 
-  if Length(AWorkOrder.Title) > 200 then
-    raise EWorkOrderValidation.Create('Title must not exceed 200 characters.');
+  if Length(AWorkOrder.Title) > MAX_TITLE_LENGTH then
+    raise EWorkOrderValidation.CreateFmt(
+      'Title must not exceed %d characters.', [MAX_TITLE_LENGTH]);
+
+  if Length(AWorkOrder.Location) > MAX_LOCATION_LENGTH then
+    raise EWorkOrderValidation.CreateFmt(
+      'Location must not exceed %d characters.', [MAX_LOCATION_LENGTH]);
 end;
 
-procedure TWorkOrderService.StampTimestampsForCreate(AWorkOrder: TWorkOrder);
+procedure TWorkOrderService.ValidateStatusTransition(
+  ACurrentStatus, ANewStatus: TWorkOrderStatus);
 begin
-  AWorkOrder.Status    := woNew;
-  AWorkOrder.CreatedAt := Now;
-  AWorkOrder.UpdatedAt := Now;
-end;
-
-procedure TWorkOrderService.StampTimestampForUpdate(AWorkOrder: TWorkOrder);
-begin
-  AWorkOrder.UpdatedAt := Now;
+  if not TWorkOrder.IsValidTransition(ACurrentStatus, ANewStatus) then
+    raise EWorkOrderValidation.CreateFmt(
+      'Cannot change status from "%s" to "%s".',
+      [WorkOrderStatusLabels[ACurrentStatus], WorkOrderStatusLabels[ANewStatus]]);
 end;
 
 { --- public API --- }
@@ -80,14 +81,32 @@ end;
 function TWorkOrderService.CreateWorkOrder(AWorkOrder: TWorkOrder): Integer;
 begin
   ValidateRequiredFields(AWorkOrder);
-  StampTimestampsForCreate(AWorkOrder);
+  AWorkOrder.Status    := woNew;
+  AWorkOrder.CreatedAt := UtcNow;
+  AWorkOrder.UpdatedAt := UtcNow;
   Result := FRepo.InsertWorkOrder(AWorkOrder);
 end;
 
 procedure TWorkOrderService.UpdateWorkOrder(AWorkOrder: TWorkOrder);
+var
+  Existing: TWorkOrder;
 begin
   ValidateRequiredFields(AWorkOrder);
-  StampTimestampForUpdate(AWorkOrder);
+
+  Existing := FRepo.FetchById(AWorkOrder.Id);
+  if Existing = nil then
+    raise EWorkOrderValidation.CreateFmt('Work order #%d does not exist.', [AWorkOrder.Id]);
+
+  try
+    if Existing.IsCompleted then
+      raise EWorkOrderValidation.Create('Completed work orders cannot be modified.');
+
+    ValidateStatusTransition(Existing.Status, AWorkOrder.Status);
+  finally
+    Existing.Free;
+  end;
+
+  AWorkOrder.UpdatedAt := UtcNow;
   FRepo.UpdateWorkOrder(AWorkOrder);
 end;
 

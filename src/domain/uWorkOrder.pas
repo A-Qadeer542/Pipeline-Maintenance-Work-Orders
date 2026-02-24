@@ -3,7 +3,9 @@ unit uWorkOrder;
 interface
 
 uses
-  System.SysUtils;
+  System.SysUtils,
+  System.DateUtils,
+  System.TimeSpan;
 
 type
   TWorkOrderStatus   = (woNew, woInProgress, woCompleted);
@@ -24,6 +26,9 @@ const
     'Low', 'Medium', 'High'
   );
 
+  MAX_TITLE_LENGTH    = 200;
+  MAX_LOCATION_LENGTH = 200;
+
 type
   TWorkOrderFilter = record
     Status: TWorkOrderStatus;
@@ -33,6 +38,8 @@ type
     class function None: TWorkOrderFilter; static;
     class function ByStatus(AStatus: TWorkOrderStatus): TWorkOrderFilter; static;
     class function ByPriority(APriority: TWorkOrderPriority): TWorkOrderFilter; static;
+    class function ByStatusAndPriority(AStatus: TWorkOrderStatus;
+      APriority: TWorkOrderPriority): TWorkOrderFilter; static;
   end;
 
   TWorkOrder = class
@@ -54,8 +61,10 @@ type
 
     function IsNewRecord: Boolean;
     function IsCompleted: Boolean;
+    function HasTechnician: Boolean;
     function CanAdvanceStatus: Boolean;
     function NextStatus: TWorkOrderStatus;
+    class function IsValidTransition(AFrom, ATo: TWorkOrderStatus): Boolean; static;
     function StatusLabel: string;
     function PriorityLabel: string;
 
@@ -73,7 +82,14 @@ type
 
   EWorkOrderValidation = class(Exception);
 
+function UtcNow: TDateTime;
+
 implementation
+
+function UtcNow: TDateTime;
+begin
+  Result := TTimeZone.Local.ToUniversalTime(Now);
+end;
 
 { TWorkOrderFilter }
 
@@ -94,6 +110,15 @@ class function TWorkOrderFilter.ByPriority(APriority: TWorkOrderPriority): TWork
 begin
   Result := None;
   Result.Priority          := APriority;
+  Result.HasPriorityFilter := True;
+end;
+
+class function TWorkOrderFilter.ByStatusAndPriority(AStatus: TWorkOrderStatus;
+  APriority: TWorkOrderPriority): TWorkOrderFilter;
+begin
+  Result.Status            := AStatus;
+  Result.Priority          := APriority;
+  Result.HasStatusFilter   := True;
   Result.HasPriorityFilter := True;
 end;
 
@@ -126,6 +151,11 @@ begin
   Result := FStatus = woCompleted;
 end;
 
+function TWorkOrder.HasTechnician: Boolean;
+begin
+  Result := FAssignedTechnicianId > 0;
+end;
+
 function TWorkOrder.CanAdvanceStatus: Boolean;
 begin
   Result := FStatus <> woCompleted;
@@ -138,6 +168,19 @@ begin
     woInProgress: Result := woCompleted;
   else
     Result := FStatus;
+  end;
+end;
+
+class function TWorkOrder.IsValidTransition(AFrom, ATo: TWorkOrderStatus): Boolean;
+begin
+  if AFrom = ATo then
+    Exit(True);
+
+  case AFrom of
+    woNew:        Result := ATo = woInProgress;
+    woInProgress: Result := ATo = woCompleted;
+  else
+    Result := False;
   end;
 end;
 

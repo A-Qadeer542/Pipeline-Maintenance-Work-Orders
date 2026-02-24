@@ -56,10 +56,15 @@ var
   Ini: TIniFile;
 begin
   Ini := TIniFile.Create(ResolveConfigPath);
-  Result := TFDConnection.Create(nil);
   try
-    ApplyConnectionParams(Result, Ini);
-    Result.Connected := True;
+    Result := TFDConnection.Create(nil);
+    try
+      ApplyConnectionParams(Result, Ini);
+      Result.Connected := True;
+    except
+      Result.Free;
+      raise;
+    end;
   finally
     Ini.Free;
   end;
