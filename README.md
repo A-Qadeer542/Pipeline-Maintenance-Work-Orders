@@ -38,6 +38,8 @@ A **composition root** (`TAppContext`) wires everything together — connection,
 
 - **`TStringGrid` over `TDBGrid`** — I deliberately avoided data-aware controls. `TDBGrid` ties the form to a dataset, which means the UI layer ends up knowing about the data layer. With a plain `TStringGrid`, the form just receives a list of objects from the service and populates cells. No `TDataSource`, no `TDataSet` on the form, no implicit coupling. The forms stay thin and testable.
 
+- **Raw SQL over an ORM** — I went with hand-written FireDAC queries instead of Aurelius. No commercial dependency, full visibility into every query, and the repository interfaces still give me the same decoupling an ORM would if I ever need to swap the storage backend.
+
 - **Minimal DFMs** — I stripped out the IDE-generated noise (`PixelsPerInch`, `TextHeight`, default property values) so the committed DFM files only contain what actually matters for the layout. Easier to diff, easier to review.
 
 ## Project layout
